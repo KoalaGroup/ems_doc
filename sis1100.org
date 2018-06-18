@@ -1,0 +1,203 @@
+* Debug Notes
+** Try to compile Peter's driver code in Kubuntu 16.04 (kernel version: 4.13.0-32-generic)
+   1. latest driver from [[http://www.struck.de/linux1100.htm][SIS Website (V2.13-12)]] can be built successfully, driver code from Peter's CVS repository can't be built
+   2. Peter's driver code repository name: *sis1100_cmc*
+*** compiling errors
+**** sis1100_sc_linux.h:149:24: error: field 'sched_param' has incomplete type
+     /sched_param/ is defined in header /sched.h/, which is linux kernel header and used for process scheduling.
+     This header is included in SIS latest driver in file /sis1100_sc.h/, which in turn included in /sched\/signal.h/ in the following code block.
+     #+BEGIN_SRC c++
+     #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,11,0)
+ #include "uapi/linux/sched/types.h"
+ #include "sched/signal.h"
+#endif
+
+/* 16NOV2016 For FEDORA23_Kernel4.2.3.300 */
+#include "vmalloc.h"
+     #+END_SRC
+     
+     - add the above code to sis1100_sc_linux.h
+     - add the include directory in Makefile as follows:
+       #+BEGIN_SRC
+       ccflags-y += -I/usr/src/linux-headers-$(KERNVER)/include/linux
+       #+END_SRC
+**** Try to compare the code base of Peter's and SIS official website, and modify Peter's code accordingly.
+     Files changed, basically these changes are about the API changes in latest linux kernel. The commit hash is '7260cf23d0d18c97c957ecd2e3388cb7cebbfb08':
+     - sis1100_autoconf_linux.c :: CLASS_ATTR -> _ATTR
+     - sis1100_sgl_map_user_linux.c :: get_user_pages -> get_user_pages_remote, page_cache_release -> put_page
+     - sis1100_sc.h :: add additional kernel headers
+     - Makefile :: minor stuff
+     
+     After these modification, the code from Peter's CVS server and the previous version of Peter's code base (which has proved to be working on old PC) are compilable.
+**** Both the driver from official SIS website and from Peter's server can be compiled, but can't work on Kubuntu 16.04. Only the old version works.
+     The problems occurs on the irq part of the driver. They are solved by introducing following changes.
+     For Peter's latest code, change the flag *PLXIRQ_DEBUG* to *0* in the file /sis1100_irq.c/.
+     For the code from SIS website, copy the code about /plxirq_pwr_active/ from the Peter's code base to it.
+     
+* Informations
+** summary
+   The hardware development can be divided into two generations.
+   The first generation is developed mainly for experiments on COSY at IKP-FZJ. 
+   The second generation is built upon the experience from the first generation. But the products are released under a company (Struck Innovative Systeme).
+   The second generation has a common cornerstone, i.e. the sis1100-cmc carrier board, while for the first generation each function is a dedicated PCI card.
+   The application-specific mezzanine boards can be combined with sis1100-cmc as a full-functional boards.
+   
+   #+CAPTION: Relation between the two generations
+   | First generation | Second generation |
+   | pcicamac         | sis1100-cmc       |
+   | pcisync          | sis1100-cmc/sync  |
+   | pcihotlink       | sis1100-cmc/hotlink  |
+   
+   Available sis1100-cmc mezzanine cards and corresponding driver under Peter's CVS repository(sis1100_cmc):
+   - SIS1100-Opt :: The Main function of SIS1100-CMC (driver directory: sis1100_cmc/sis1100, module name: sis1100.ko)
+   - [[http://ieeexplore.ieee.org/document/1596345/][N110]] :: ReadOut Controller for TDC module N110 (driver directory: sis1100_cmc/n110, module name: n110.ko)
+   - HOTLink :: (driver directory: sis1100_cmc/hotlink, module name: hlplx.ko)
+   - Sync :: (driver directory: sis1100_cmc/sync, module name: plxsync.ko)
+   - lvdbus[fn:1] :: (driver directory: sis1100_cmc/lvdbus, module name: lvdbus.ko)
+** Linux Kernel Modules (LKM)
+   Kernel modules are pieces of code that can be loaded and unloaded into the kernel upon demand. They extend the functionality of the kernel without the need to reboot the system.
+   A module can be cnfigured as built-in or loadable. To dynamically load or remove a module, it has to be configured as a loadable module in the kernel configuration.
+   Device drives are normally loadable kernel modules.
+   #+CAPTION: Linux user space and kernel space
+   [[file:userspace-kernelspace.png][Linux userspace and kernelspace]]
+   
+   A kernel module is not an application -- for a start there is no /main()/ function!
+   Some of  the key differences are that kernel modules:
+   * do not execute sequentially :: a kernel module registers itself to handle requests using its initialization function, which runs and then terminates. The type of requests that it can handle are defined within the module code. This is quite similar to the event-driven programming model that is commonly utilized in graphical-user interface (GUI) applications.
+   * do not have floating-point support :: 
+   * have a higher level of execution priority :: typically, more CPU cycles are allocated to kernel modules than to user-space programs. 
+   * can be interrupted :: one conceptually difficult aspect of kernel modules is that they can be used by several different programs/processes at the same time. We have to carefully construct our modules so that they have a consistent and valid behavior when they are interrupted.
+   * do not have /printf()/ functions :: kernel code cannot access libraries of code that is written for the Linux user space. The kernel module lives and runs in kernel space, which has its own memory address space. The interface between kernel space and user space is clearly defined and controlled. We do however have a printk() function that can output information, which can be viewed from within user space.
+   * do not have automatic cleanup :: any resources that are allocated to the module must be manually released when the module is unloaded, or they may be unavailable until a system reboots
+   
+   You should avoid using global variables in kernel modules — it is even more important than in application programming, as global variables are shared kernel wide. 
+   You should use the static keyword to restrict a variable’s scope to within the module. 
+   If you must use a global variable, add a prefix that is unique to the module that you are writing.
+   
+   The Makefile to build an external kernel module is called *kbuild Makefile*
+*** configuration: 
+**** sis1100_autoconf_linux.c:
+     MODULE_LICENSE, MODULE_AUTHOR, MOUDULE_DESCRIPTION, MOUDULE_VERSION
+
+     file_operations
+
+     module_init(init_sis1100_module), module_exit(cleanup_sis1100_module)
+     
+     init_sis1100_device, done_sis1100_device, init_sis1100_module, cleanup_sis1100_module
+**** sis1100_sc.h && sis1100_sc_linux.h
+     declearation of:
+     sis1100_open, sis1100_release, sis1100_read, sis1100_write, sis1100_ioctl, sis1100_ioctl32, sis1100_llseek
+**** summary table
+     | file name | implemented function |
+     |           |                      |
+** sis1100-cmc with sis1100-opt mezzanine module
+   sis1100 is located on the PCI side and consists of two PCBs. The first board is the SIS1100-CMC carrier board, the other one is the SIS1100-OPT Gigabit link CMC card.
+   SIS1100-CMC is a PCI CMC Carrier.
+   - CMC :: Common Mezzanine Card is a standard (https://en.wikipedia.org/wiki/PCI_Mezzanine_Card)
+   - [[https://www.broadcom.com/products/pcie-switches-bridges/usb-pci/io-accelerators/pci9054][PLX9054/PCI9054]] :: is a configurable interface chip used on PCI cards, which interfaces the PCI bus to a local bus on the card.
+   - eCMC :: PCIe CMC carrier 
+   - [[https://www.broadcom.com/products/pcie-switches-bridges/pcie-bridges/pex8311][PLX8311/PEX8311]] :: is a x1 Lane PCI Express Bridge
+   - cCMC :: compact PCI CMC carrier
+
+   The main focus of the sis1100 development is the implementation of a high performance PCI/cPCI/PCIe based event building architecture as illustrated below.
+   The key component of the system is bidirectional optical data transmission with a data rate of 1 Gbit/s.
+   Apoint to point architecture was chosen for performance rasons. Data are transferred between a PCI/cPCI module and a dedicated controller.
+   Controller implementation comprise a VME master, a CAMAC controller and a universal frontend readout system.
+   [[file:sis1100-cmc:opt.jpeg][sis1100-cmc/opt]]
+   [[file:sis11003100system.jpg][sis1100-system]]
+   SIS3100 is a VME controller, which can communicate with sis1100.
+   SIS5100 is a CAMAC/FASTCAMAC controller, which can communicate with sis1100.
+   
+** legacy devices
+   Most legacy hardware's manual can be found on [[http://ikpe1101.ikp.kfa-juelich.de/cosy-11/man/Manuals_E.html][COSY-11]] webpage.
+*** pcicamac
+   PCICAMAC is the PCI Interface to the CAMAC/FERA Controller
+   
+*** pcihotlink
+    HOTLink is a serial link protocol developed by Cypress. It is used in poit-to-point transmission with high-speed requirement.
+    PCI HOTLink is a PCI Card Interface for HOTLink readout system used in COSY-11.
+    
+*** pcisync
+   pcisync is a PCI-based Synchronization Module used in COSY-11.
+
+* UEFI Secure Boot/Sign kernel module[fn:4] 
+** *Problem*: 
+  Since kernel version 4.4.0-20, it has enforced the UEFI Secure Boot. Thus third-party modules built without valid signature can not be loaded.
+  
+** *Checking Status*:
+ - Check whether the system is Secure Boot Enabled:
+   #+BEGIN_SRC bash
+   dmesg | grep -i secure
+   #+END_SRC
+ - Check whether the kernel module has been signed or not. If signed, a string 'Module signature appended' will be appended on the tail of the kernel module binary.
+   #+BEGIN_SRC bash
+   tail $(modinfo -n module.ko) | grep "Module signature appended"
+   #+END_SRC
+   or
+   #+BEGIN_SRC bash
+   hexdump -C module.ko | tail 
+   #+END_SRC 
+    
+** *Info*: 
+The UEFI booting process: UEFI Firmware (secure boot enabled) > EFI binaries (shim, MokManager, grub2) > Linux kernel.
+All the binaries in the chain, starting from the firmware to kernel module should be properly signed, otherwise they will not be loaded.
+For the firmware (BIOS/UEFI firmware, which is provided by the motherboard vendor), most of them have already include a public key by Microsoft.
+Thus, for the bootloader in the next stage, it needs to be signed by Microsoft as well. Right now, /shim/ and /PreLoader/ are two kinds of bootloader that have been signed using Microsoft key.
+/shim/ is developed by Fedora and being used by other distributions including Ubuntu, SUSE.
+
+*** /Shim/
+    As shim is signed by Microsoft, it can be loaded by most motherboard firmware.
+    /shim/ provides large flexibility of Secure Boot for Linux with three types of keys:
+    - Secure Boot keys :: /shim/ recognizes the keys that are built into the firmware
+    - Shim keys :: /shim/ may optionally be compiled with its own built-in key, which takes the same form as a Secure Boot key but isn't registered with the firmware.
+      A distribution provider can sign its own bootloader and kernels with this key, enabling quick signing of these ciritical items sa as to not delay releasing updates while waiting for Microsoft to sign them
+    - MOKs :: A Machine Owner Key(MOK) is a type of key that a user generates and uses to sign an EFI binary.
+              
+    /shim/ -> /MokManager/ -> /grubx64.efi/. /shim/ is designed to launch GRUB 2, but it can launch other boot loaders, provided they're named grubx64.efi. /rEFInd/ is designed to honor Secure Boot settings.
+    
+** *Solutions*:
+There are two solutions:
+1. Disable the secure boot from BIOS/UEFI, which will diable the whole chain of secured boot.
+2. Sign the kernel module with your own key[fn:2] (MOK: Machine Owner Key, The MOK facility).
+   The MOK facility is supported by /shim.efi/, /MokMananger.ef/, /grubx64.efi/ and /mokutil/[fn:3]. And of cource, also relying on /openssl/ to generate the key-pair.
+   Erolling a MOK key requires manual interaction by a physically present user at the UEFI system console on the target system, hence the name MachineOwenerKey.
+   The steps is as follows:
+   * Generate your own signing keys (MOK) using openssl
+   #+BEGIN_SRC bash
+   openssl req -new -x509 -newkey rsa:2048 -keyout MOK.priv -outform DER -out MOK.der -nodes -days 36500
+   #+END_SRC
+   * Sign the module
+     1. use scripts from kernel source
+     #+BEGIN_SRC bash
+     sudo /usr/src/linux-headers-$(uname -r)/scripts/sign-file sha256 ./MOK.priv ./MOK.der $(modinfo -n module.ko)
+     #+END_SRC
+     [@2] use kmodsign
+     #+BEGIN_SRC bash
+     kmodsign sha512 ./MOK.priv ./MOK.der module.ko
+     #+END_SRC
+     1. use sbsign (the key-pair should be in PEM format)
+   * Confirm the module is signed
+     #+BEGIN_SRC bash
+     tail $(modinfo -n vboxdrv) | grep "Module signature appended"
+     #+END_SRC
+   * Enroll the new public key into MOK list
+   #+BEGIN_SRC bash
+   sudo mokutil --import MOK.der
+   #+END_SRC
+   * Reboot the target system. The MokManager is launched automatically by the /shim/ layer after it detects one or more pending enrollment requests.
+   * Confirm with MokMananger to enroll the key. The physical presence of the user in front of the console for the intercation is required.
+   * Continue the booting process. Confirm the key is enrolled.
+   #+BEGIN_SRC bash
+   mokutil --test-key MOK.der
+   #+END_SRC
+       
+The manual signing process may introduce a problem when the kernel updates. To automatically rebuild and sign the module, [[https://help.ubuntu.com/community/DKMS][DKMS]] package and /update-secureboot-policy/ can be used in Ubuntu.
+* Footnotes
+
+[fn:4] References: [[https://wiki.ubuntu.com/UEFI/SecureBoot/Testing?action=show&redirect=SecurityTeam%252FSecureBoot][Ubuntu Wiki]], [[http://www.rodsbooks.com/efi-bootloaders/secureboot.html][Dealing with Secure Boot]], [[http://www.rodsbooks.com/efi-bootloaders/controlling-sb.html][Controlling Secure Boot]]
+
+[fn:3] In Kubuntu 16.04LTS, these files are under directory '/boot/efi/EFI/ubuntu', with the name of /shimx64.efi/, /mmx64.efi/, /grubx64.efi/. /mokutil/ is a command invoked in shell.
+
+[fn:2] Reference: https://askubuntu.com/questions/760671/could-not-load-vboxdrv-after-upgrade-to-ubuntu-16-04-and-i-want-to-keep-secur/768310#768310
+
+[fn:1] LVD BUS: Low Voltage Differential Bus

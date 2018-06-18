@@ -1,0 +1,541 @@
+#+TITLE: EMS (Experiment Message Specification)
+
+* Source Repository
+  :PROPERTIES:
+  :CUSTOM_ID: source-repository
+  :END:
+
+  Therer're three repositories: 
+  + CVS :: CVSROOT=:pserver:koala@zelcvs.zel.kfa-juelich.de:/cvsroot
+    + sis1100_cmc :: 
+    + ems :: 
+  + Git EMS :: https://pandaatfair.githost.io/KoalaGroup/KoalaEms 
+  + Git Driver :: https://pandaatfair.githost.io/KoalaGroup/KoalaDriver.git
+  + Git EMS Test :: https://pandaatfair.githost.io/YongZhou/ems 
+
+The CVS repo is the original repo from Peter and contains all of and the
+latest ems code and sis1100 driver code. The checkout method is as follows: 
++ Set environment variable /CVSROOT/
+#+BEGIN_SRC bash
+export CVSROOT=:pserver:koala@zelcvs.zel.kfa-juelich.de:/cvsroot
+#+END_SRC
++ Login to the CVS server with the following account: *Account:* /koala/, *Password:* /only4koala/ 
+(will create .cvspass the first time). 
+#+BEGIN_SRC 
+cvs login
+#+END_SRC
+cvs login 
+- Checkout the code cvs co ems
+#+BEGIN_SRC bash
+cvs co ems
+cvs co sis1100_cmc
+#+END_SRC
+
+The Git EMS repo is the official KoalaEms software. 
+
+The Git Driver repo is the official KoalaDriver software, which includes all the linux driver code needed for KoalaEms.
+Currently, there're three branches:
+- master :: the main development work occurs here, the initial commit is from an old version of Peter's code
+- peter :: the branch corresponds to the latest codebase of Peter's cvs server, with minor modifications for building in Koala's computers
+- siswebsite :: this branch corresponds to the latest driver code from SIS official website, with minor modifications for building in Koala's computers
+
+The Git EMS Test repo is a fork from CVS repo. It's my private repo.
+It's only for test purpose.
+
+Both KoalaEms and KoalaDriver have a mirror repo at GitHub.
+
+* Building & Compiling
+  :PROPERTIES:
+  :CUSTOM_ID: building-compiling
+  :END:
+
+** TODO Components
+   *KoalaEms* is built in four parts: 
+   - client 
+   - commu 
+   - driver 
+   - server
+   
+   Usually, /client/ and /commu/ are installed in Client computer. 
+   And /driver/ and /server/ are installed in Server computer.
+
+** In Client computer
+   :PROPERTIES:
+   :CUSTOM_ID: in-client-computer
+   :END:
+
+*** Client binary
+    :PROPERTIES:
+    :CUSTOM_ID: client-binary
+    :END:
+
+    When speaking of the /client/ binary, we are saying the /tcl/tk/ based client. 
+    The source code is in package /tcl_clientlib/. 
+    Internally, it depends on these packages: /common/, /support/, /clientlib/, /proclib/.
+    And it depends on external /tcl/tk/ library. 
+
+    For /common/, /support/, /clientlib/, /proclib/, the build process is as follows. 
+    For each /PACKAGE/: 
+    1. mkdir $PACKAGE under build directory 
+    2. $PACKAGE_SRC/configure under newly created directory 
+    3. make depend 
+    4. make
+    To make these compiling processes more convenient, a bash script /build.sh/ is provided.
+
+    For /tcl_clientlib/, an extra dependence on /tcl/tk/ should be passed in during configure step. Other steps are the same. 
+    The configure step should be 
+    #+begin_src bash
+    /$tcl_clienblib_src/configure --with-tcl=$tcl_include_dir --with-tk=$tk_include_dir --with-tcllib=$tcl_lib_dir --with-tklib=$tk_lib_dir/
+    #+end_src
+    Notes: to find the install directory of /tcl/tk/ library, you can use /dpkg -l/ or /ldconfig -p/. 
+    As a reminder, normally the include directory of /tcl/ and /tk/ are the same.
+
+    After building sucessfully, the last step is to make index for /tcl/ packages that will be used in /ems_control/. 
+    The related /tcl/ packages are /common/ and /daq/. 
+    Under each /tcl/ package directory, there exists a script called /index/.
+    Invoke it under each directory, then the index file /tclindex/ will be generated. 
+    The /tcl/ packages are save under /tcl_clientlib/scripts/ directory in the code base.
+    
+    To make the building process for /tcl_clientlib/ more convenient, a bash script /build_tclclientlib.sh/ is provided.
+
+*** The /commu/ binary
+    :PROPERTIES:
+    :CUSTOM_ID: the-commu-binary
+    :END:
+
+    /commu/ depends on /commu/ and /support/ internally. 
+    No external dependence exists. The build process is as follows. 
+    For each /PACKAGE/:
+    1. mkdir $PACKAGE under build directory 
+    2. $PACKAGE\_SRC/configure under newly created directory 
+    3. make depend 
+    4. make
+
+** In Server computer
+   :PROPERTIES:
+   :CUSTOM_ID: in-server-computer
+   :END:
+
+*** Device driver KoalaDriver
+    :PROPERTIES:
+    :CUSTOM_ID: device-driver-sis1100.ko
+    :END:
+    
+    Currently, KoalaDriver consists only of sis1100 linux driver. The installation is as follows:
+    1. clone the git repo and cd into /dev/pci/ directory
+    #+BEGIN_SRC bash
+    git clone https://pandaatfair.githost.io/KoalaGroup/KoalaDriver.git
+    cd dev/pci
+    #+END_SRC
+    3. change to root and build
+    #+BEGIN_SRC bash
+    sudo make
+    #+END_SRC
+    4. install
+    #+BEGIN_SRC bash
+    sudo make install
+    #+END_SRC
+    @5. check the installation. If the driver is installed successfully, there will be new file nodes under //dev/ directory. With prefix of 'sis1100_'
+    #+BEGIN_SRC bash
+    ls /dev | grep sis1100
+    #+END_SRC
+    
+*** Server binary
+    :PROPERTIES:
+    :CUSTOM_ID: server-binary
+    :END:
+
+    Internally, /server/ depends on /common/. Externally, it depends on the header files of *KoalaDriver* (for sis1100, these are headers like sis1100_var.h, sis3100_map.h and plx9054reg.h). 
+    These header files should be put under a dedicated driver directory (call it /DRIVER_DIR/ afterwords) with the structure: /DRIVER_DIR//dev/pci. 
+
+    Also during the build process, an customizable /CONFIG/ file is needed. 
+    *ems* is a very flexible and modulized package. For the server, various kinds of hardwares can be integrated.
+    However, for specific experiments, only part of these hardware will be used. In small-scale experiments, it would be a burden to compile the whole server codebase.
+    The /CONFIG/ file is used to define which components will be compiled in the server binary.
+    The /CONFIG/ file ends with the suffix /.conf/ and are saved under /server/conf/.
+    For KOALA experiment, the minimum configuration is saved in /cc_simple.config/.
+
+
+    The building steps are as follows (assuming /common/ has already been built successfully): 
+    1. make a new build directory and cd into it
+    2. configure to generate Makefile. Pass the /DRIVER_DIR/ with the option '--aux-inc'. /DRIVER_DIR/ should contain all the driver headers which is needed in this config. These headers are saved under '/DRIVER_DIR/dev/pci'
+       #+BEGIN_SRC bash
+       $SERVER_SRC/configure --aux-inc=/DRIVER_DIR/ 
+       #+END_SRC
+    3. building. Pass the /CONFIG/ filename base (without suffix '.config') with macro 'z'. /CONFIG/ file should exist under '/SERVER_SRC/conf/'.
+       #+BEGIN_SRC bash
+       make z=/CONFIG/ depend
+       make z=/CONFIG/
+       #+END_SRC
+    4. the output binary is named /server/ and /server./CONFIG// which is a link to /server/.
+       #+BEGIN_SRC bash
+       cd build
+       mkdir /CONFIG/
+       #+END_SRC
+
+    To make the build process more convenient, a bash script called /mache/ has been created under /server/ source directory. 
+    To use this script, you first need to make a directory with the same name as the /CONFIG/ file. For example, for 'cc_all.config', make a new directory called 'cc_all'.
+    Then copy the script into the new build directory. And edit /mache/ to change some directory name. Then invoke it by /./mache neu/. Clean build by /./mache leer/.
+    Recompile to reflect the latest changes by /./mache/.
+
+**** /CONFIG/ file format
+     
+    In the building process, the /CONFIG/ file will be first processed by the pre-processor like a header C/C++ file.
+    So all the directives that can be recognized by the preprocessor can be used in the /CONFIG/ file.
+    It has three parts: 
+    1. The directives such as /#define/, /#ifdef/, /#undef/ and so on. These are processed bu preprocessor and used for the conditional processing of the /CONFIG/ file.
+    2. The lines start with /%/. After preprocessing, the left part of the /CONFIG/ file will be analyzed. The /%/ will be replaced by /#/, and these lines will be inserted into a header file
+       called /conf/sconf.h/. This header in included in almost all src files in /server/.
+    3. The lines which contains /=/ or /=+/. These lines will be extracted and inserted into a file called /conf/config.make/, which will in turn be included by all the Makefiles for building the /server/.
+
+**** /CONFIG/ file content
+     MACROS:
+     | Valid in /CONFIG/ file | Valid in /sconf.h/ | Related functions and source files            |
+     |------------------------+--------------------+-----------------------------------------------|
+     | USE_DEBUG, DEBUG       | DEBUG              | almost everywhere, for debug info printing    |
+     | LOWLEVELBUFFER         | LOWLEVELBUFFER     | lowbuffer_init in server.c                    |
+     | LOWLEVEL               | LOWLEVEL           | lowlevel_init in server.c                     |
+     |------------------------+--------------------+-----------------------------------------------|
+     | _OBJ_VAR               | OBJ_VAR            | var_init() in objects/ved/ved.c               |
+     | _OBJ_DOMAIN            | OBJ_DOMAIN         | domain_init() in objects/ved/ved.c            |
+     | _OBJ_IS                | OBJ_IS             | is_init() in objects/ved/ved.c                |
+     | _OBJ_DO                | OBJ_DO             | do_init() in objects/ved/ved.c                |
+     | _OBJ_PI                | OBJ_PI             | pi_init() in objects/ved/ved.c                |
+     |------------------------+--------------------+-----------------------------------------------|
+     | _DOM_ML                | DOM_ML             | dom_ml_init() in objects/domain/domain.c      |
+     | _DOM_LAM               | DOM_LAM            | dom_lam_init() in objects/domain/domain.c     |
+     | _DOM_TRIGGER           | DOM_TRIGGER        | dom_trigger_init() in objects/domain/domain.c |
+     |                        | TRIGGER            | trigger_init in server.c                      |
+     | _DOM_EVENT             | DOM_EVENT          | dom_event_init() in objects/domain/domain.c   |
+     | _DOM_DATAOUT           | DOM_DATAOUT        | dom_dataout_init() in objects/domain/domain.c |
+     |                        | DOM_DATAOUT_MULTI  |                                               |
+     |                        | MAX_DATAOUT        | objects/domain/dom_dataout.c                  |
+     | _DOM_DATAIN            | DOM_DATAIN         | dom_datain_init() in objects/domain/domain.c  |
+     |------------------------+--------------------+-----------------------------------------------|
+     
+* TODO Development Environment
+  :PROPERTIES:
+  :CUSTOM_ID: development-environment
+  :END:
+
+** On ikp078
+   :PROPERTIES:
+   :CUSTOM_ID: on-ikp078
+   :END:
+*** cvs repsitory
+    //home/koala/ems/cvs/ems/
+    //home/koala/ems/cvs/sis1100_cmc/
+
+*** KoalaEms
+    :PROPERTIES:
+    :CUSTOM_ID: ems-source-code-base
+    :END:
+    //home/koala/ems/KoalaEms/
+    
+*** KoalaDriver
+    :PROPERTIES:
+    :CUSTOM_ID: device-drivers
+    :END:
+    //home/koala/ems/KoalaDriver/
+    
+** On ikp532
+*** KoalaEms
+    //home/koala/ems/KoalaEms/
+
+*** KoalaDriver
+    //home/koala/ems/KoalaDriver/
+    
+* Running Environment
+  :PROPERTIES:
+  :CUSTOM_ID: running-environment
+  :END:
+
+** server side
+   :PROPERTIES:
+   :CUSTOM_ID: server-side
+   :END:
+
+*** TODO install directory: 
+  - the build directory is the install directory 
+  - the install rule in Makefile should be added sometime later
+
+*** invoking methods: 
+    No prerequisites are needed, after the /server/ and *KoalaDriver* are installed successfully.
+  - cd to the server build directory:
+    #+BEGIN_SRC bash
+    cd /home/koala/ems/KoalaEms/build/cc_simple 
+    #+END_SRC
+  - invoke the server:
+    #+BEGIN_SRC bash
+    ./server -l:vmep=/dev/sis1100\_00;sis3100
+    #+END_SRC
+    or there is a script called 'ems\_server.sh'
+    #+BEGIN_SRC bash
+    ./ems_server.sh
+    #+END_SRC
+  - the default port is: 2048
+    The port can also be set to another value by the option "-p"
+
+*** server logfiles: 
+  - invoking from terminal: terminal output 
+  - otherwise: /var/log/ems
+
+*** driver logfile: 
+  - /var/log/syslog 
+  - or dmesg
+** *commu* side
+*** introduction
+   *commu* lies between *server* and *client* as a man in the middle communication. *commu* connects to the *sever* directly.
+   The *client* will connect to *commu* first, then in turn communicate with the *server*. All communication between server and client are transported through *commu*. 
+   It can be used for communication debug or to steal all communication. 
+   
+*** install directory
+    The build directory is the install directory.
+    
+*** prerequistes and invokation    
+   - prepare the communication relation list file: /etc/commlist
+     + This file defines the relation between the /VED/ name and the real address of the server
+     + Format: " $VED_NAME  $SERVER_IP  $SERVER_PORT"
+   - invoking:
+     #+BEGIN_SRC bash
+     cd $commu_build_dir
+     ./commu [-nw]
+     #+END_SRC
+     By default, the above command will setup local socket file '/etc/
+     
+*** more informations
+    As a bridge between client and server, there are two sides of *commu*: one side is connected to the server, the other to the client.
+    
+    For the server side, it keeps a list of correspondence relations between VED names and real server address.
+    These correspondences are defined in a file which must be provided by the user. I call this file 'the communication relation list file'.
+    The VED names will be used in the client setup file (.wad files), so the client side only knows the VED names. It's *commu*'s responsiblity to tranlate VED names into the real server IP and port. 
+    The default communication relation file should be saved as "/etc/commlist". 
+    Or this file can also be passed in through the command line:
+    #+BEGIN_SRC bash
+    commu -l 'commlist file' 
+    #+END_SRC 
+   
+    For the client side, a local socket channel and a Internet socket channel are established and can be connected by the client.
+    - Default local socket: /var/temp/emscomm
+    - Default Internet socket port: 4096
+    Both the sockets are customizable by the user using command line options:
+    - Passing a different local socket file:
+    #+BEGIN_SRC bash
+    ./commu -s "new socket file"
+    #+END_SRC
+    - Binding to a different Internet socket port:
+    #+BEGIN_SRC bash
+    ./commu -p "new port"
+    #+END_SRC
+    
+** client side
+   :PROPERTIES:
+   :CUSTOM_ID: client-side
+   :END:
+
+*** TODO install directory: 
++ The Makefile has an default install rule. 
+  The default install directory is //usr/local/ems/ with the following structure: 
+  + /bin/: client side binaries: 
+    + from package /tcl\_clientlib/: /emssh/, /emswish/, /histowish/ 
+    + from package /commu/: /commu/ + /lib/: 
+    + from package /common/: /libcommon.a/ 
+    + from package /support/: /libsupp.version.a/, /libvedsupp.version.a/ 
+    + from package /clientlib/: /libemscomm.version.a/, /libemscommxx.version.a/ 
+    + from package /proclib/: /libproc.version.a/ 
+    + from package /tcl\_clientlib/: /libemstcl.version.a/, /libtclhisto.version.a/, /libtclsupp.version.a/, /libtcltime.version.a/ 
+  + /include/: headers from all packages 
+  + /share/: the default share directory. 
+    If the /global\_setup(share\_dir)/ is set to this directory, which is the case for the default /correct\_setup.tcl/, this directory should contain these files: 
+    /errorarrs.tcl/, /modultypes\_arr.tcl/, /modultypes.tcl/, /requestarr.tcl/. 
+    Thest tcl files are build in the /common/ package. 
+    And there is no rule in the Makefile to install them, so user should copy these files directly to the destinated directory.
+
+*** prerequisites to run /emscontrol/ 
+    - Make sure both server and *commu* has beeen correctly setup
+    - Environment variables: 
+      + /PATH/: to invoke the binary /emswish/ or /emssh/ 
+      + /EMSTCL_HOME/: the *ems* specific tcl/tk library path, which is located under //tcl_clientlib/scripts/ 
+    - Make index for related tcl libraries under /EMSTCL_HOME/ directory (for minimum usage, these libraries should be indexed: daq, common).
+      #+BEGIN_SRC bash
+      cd $tcl_package_dir
+      ./index
+      #+END_SRC
+      After indexing, a index file called "tclIndex" will be created under each directory.
+    - Make sure the default client configuration file /correct_setup.tcl/ exists under /daq/ directory and make modifications according to your needs.
+      /correct_setup.tcl/ saves all the default configuration when the client starts, including "main title", "facility", *commu* connection setup, logfiles, DAQ setup files etc.
+
+*** invoking methods
+    - cd to the /tcl_clientlib/scripts/daq/ package source directory
+    - invoke /ems\_control/ directly in the terminal 
+    - Click /Setup/ menu: 
+      + /Commu.../ menu : choose default 
+      + /Master Setup File.../ menu: enter absolute path of the master setup file 
+    - Click button /INIT/ for DAQ initialization
+    - Click button /START///STOP/ to start/stop DAQ
+
+*** logging
+    - Direct output in the GUI windown 
+    - Also, logfiles can be saved for later investigation. 
+      The default log file setup is defined in /correct_setup.tcl/ 
+      + /global_setup(logfiledir)/: defualt is "~/logfiles", user needs to make this directory himself to save log files effectively 
+      + /global\_setup(loglength)/ 
+      + /global\_setup(maxlogfiles)/
+
+** Checking the status of the running process under linux
+
+*** *ps* command to list the process
+    To list all processes by excutable name:
+    #+BEGIN_SRC bash
+    ps -C $name
+    #+END_SRC
+    
+    To list all processes on a system:
+    #+BEGIN_SRC bash
+    ps -e
+    ps aux
+    #+END_SRC
+    
+    To list all processed by user:
+    #+BEGIN_SRC bash
+    ps -u $username
+    #+END_SRC
+
+*** *netstat* to check the port binding
+   #+BEGIN_SRC bash
+   netstat -lnp
+   #+END_SRC
+   
+* Summary of command options
+  :PROPERTIES:
+  :CUSTOM_ID: summary-of-command-options
+  :END:
+
+** client
+   :PROPERTIES:
+   :CUSTOM_ID: client
+   :END:
+
+** server
+- /server -q/: query
+* Configuration File 
+  :PROPERTIES:
+  :CUSTOM_ID: configuration-file
+  :END:
+
+** COMMENT CBLT/MCST
+   + Registers that controls the readout of CBLT:
+     + Irq_threshold (0x6018)
+     + Max_transfer_data (0x601A)
+     + Multi_event (0x6036)
+   + The first and the last module in the CBLT/MCST chain is determined by the address of the module.
+     So, the module assigned with smallest address should be in the slot closest to the Master; the module with largest
+     address should be in the slot farthest from the Master.
+
+* Cluster 
+  Cluster is the smallest unit for data streaming in *ems*. Clusters can be streamed to network sockets or written down to disk as files.
+  - Each cluster file consists of three types of clusters:
+    + VED infos Cluster :: The first cluster in the file
+    + No more data Cluster :: The last cluster in the file
+    + Event Cluster :: All other clusters in between are event clusters, which contains the readout data from VEDs.
+  - 
+* Appendix
+  :PROPERTIES:
+  :CUSTOM_ID: appendix
+  :END:
+
+** Terminology
+   :PROPERTIES:
+   :CUSTOM_ID: terminology
+   :END:
+
+** Design
+   :PROPERTIES:
+   :CUSTOM_ID: design
+   :END:
+
+*** Three levels of decoupling
+    :PROPERTIES:
+    :CUSTOM_ID: three-levels-of-decoupling
+    :END:
+
+- client
+- commu
+- server
+
+*** Abbreviations
+    :PROPERTIES:
+    :CUSTOM_ID: abbreviations
+    :END:
+
+- CC: Crate Controller for readout
+- EM: Event Builder
+- CCM: Crate Controller with Master trigger
+- other: other server without readout ability
+- IS: Instrument System
+- VED: Virtual Experimental Device Each VED corresponds to one
+  server/crate. Each VED consists of multiple IS.
+
+VEDs can be divided into four catogeries: Crate Controller for
+readout(CC), Event Bulder(EM), Crate Controller for Master trigger(CCM),
+Crate Controller without readout ability(Other)
+
+In each system, there exists only one or no CCM/EM. In the setup file
+for the VED, if 'eventbuilder=1' then this VED is EM, if 'triggermaster
+=1', then this VED is CCM, if 'onreadout =1', the this VED is Other,
+otherwisem, this VED is the CC (the default).
+
+*** Client
+    :PROPERTIES:
+    :CUSTOM_ID: client-1
+    :END:
+
+Low level: - //common/msg.h/: message between server/client -
+//clientlib/clientcomm.c/: communication mechanism - /commu/ package:
+Man in the Middle
+
+High level interface: - *C*: /clientcomm.c/ the C interface - *C++*: in
+directory /proclib/ - *tcl/tk*: tcl script /ems\_control/ uses library
+/tcl\_clientlib/, and /tcl\_clientlib/ in turn depends on C++ classes.
+The C++ class ultimately uses the procedures defined in /clientcomm.c/
+
+Build Dependency: [[file:package_dep.pdf]]
+
+*** Server
+    :PROPERTIES:
+    :CUSTOM_ID: server-1
+    :END:
+
+Low level: - //server/commu/commu.c/
+
+** XDR (External Data Representation Standard)
+   The /XDR/ protocol is used as the standard for the message communicated between different PCs in EMS.
+   These messages includes:
+   - EMS command
+   - Log information
+   - Data obtained from VEDs
+
+*** Introduction to XDR
+    *XDR* is a standard for the description and encoding of data. It is useful for transferring data between different computer.
+    Besides that, *XDR* also uses a language (very much like the syntax of C) to describe the data format. The language  can only be used to describe data; it is not a programming language.
+    This language  allows one to describe intricate data formats in a concise manner.
+    
+    Key points:
+    1. The *XDR*  standard makes the following assumption: that bytes (or octets) are portable, where a byte is defined to be 8 bts of data.
+    2. The representation of all data types in *XDR* should be a multiple of four bytes of data.
+       If the nbytes needed to contain the data are not a multiple of four, then the n bytes are followed by enough (0 to 3) residual zero bytes.
+    3. The bytes are numbered 0 through n-1. The bytes are read or written to some byte stream such that byte m always precedes byte m+1
+    4. <> denotes variable length array, [] denotes fixed length array.
+    5. The normal *XDR* specification could be considerred the 4-byte big-endian member of a larger *XDR* family.
+    6. TCP/IP is also big-endian based
+    
+*** XDR format conversion in EMS
+    //common/xdrfloat.c/ : deprecated
+    
+    //common/xdrstring.c/ : string conversion, C code, mainly used in server
+
+    //support/xdrstrdup.c/ : string conversion, C++ code, mainly used in client
+    
+    //tcl_clientlib/ems_xdr.cc/ : for TCL/TK client
+    
+*** 

@@ -1,0 +1,35 @@
+* Signals
+  Signals are software interrupts. Most nontrivial application programs need to deal with signals.
+  
+  Signals provide a way of handling asynchronous events. They are classic examples of asynchronous events.
+  Signals occur at what appear to be rando time to the process. The process can't test a variable to see whether a signal has occurred; instead, the process has to tell the kernel "if and when this signal occurs, do the following."
+  
+  Signals have name. These names all begin with the three characters /SIG/.
+  
+  We can tell the kernel to do one of three things when a signal occurs. We call this the /action/ associated with a signal.
+  1. Ignore the signal.  Let the default action apply. This works for mos signals, but two signals can never be ignored: /SIGKILL/ and /SIGSTOOP/.
+  2. Catch the signal. To do this, we tell the kernel to call a function of ours whenever the signal occurs.
+  3. Let the default action apply. Every signal has  a default action. The default action for most signals is to terminate the process.
+  
+
+  - /kill/ :: sends a signal to a process
+  - /raise/ :: allows a process to send a signal to itself
+  - /alarm/ :: allows us to set a timer that will expire at a specified time in the future. When the timer expires, the /SIGALRM/ signal is generated.
+    If we ignore or don't catch this signal, its default action is to terminate the process.
+  - /pause/ :: suspends the calling process until a signal is caught.
+  - /sigset_t/ :: is the data type to represent multiple signals.
+    * /sigemptyset/
+    * /sigfillset/
+    * /sigaddset/
+    * /sigdelset/
+    * /sigismember/
+  - /sigprocmask/ :: The signal mask of a process is the set of signals currently blocked from delivery to that process.
+    A process can examine its signal mask, change its signal mask, or perform both operations in one step by calling this function.
+  - /sigpending/ :: returns the set of signals that are blocked from delivery and currently pending for the calling precess.
+  - /sigaction/ :: allows us to examine or modify (or both) the action associated with a particular signal. This function supersedes the /signal/ function from earlier releases of the UNIX System.
+    Once we install an action for a given signal, that actions remains installed until we explicitly change it by calling /sigaction/.
+  - /setjmp/, /longjmp/ and /sigsetjmp/, /siglongjmp/ :: can be used to jump to another function branch
+  - /sigsuspend/ ::
+
+  Linux signal real time extension
+  Or Linux application defined signal.
