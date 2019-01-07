@@ -152,7 +152,7 @@ Both KoalaEms and KoalaDriver have a mirror repo at GitHub.
     *ems* is a very flexible and modulized package. For the server, various kinds of hardwares can be integrated.
     However, for specific experiments, only part of these hardware will be used. In small-scale experiments, it would be a burden to compile the whole server codebase.
     The /CONFIG/ file is used to define which components will be compiled in the server binary.
-    The /CONFIG/ file ends with the suffix /.conf/ and are saved under /server/conf/.
+    The /CONFIG/ file ends with the suffix /.config/ and are saved under /server/conf/.
     For KOALA experiment, the minimum configuration is saved in /cc_simple.config/.
 
 
