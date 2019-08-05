@@ -381,6 +381,13 @@ Both KoalaEms and KoalaDriver have a mirror repo at GitHub.
       + /global_setup(logfiledir)/: defualt is "~/logfiles", user needs to make this directory himself to save log files effectively 
       + /global\_setup(loglength)/ 
       + /global\_setup(maxlogfiles)/
+   
+*** client configuration file '~/.daq_control_rc'
+    User can change the following settings through the configuration file '~/.daq_control_rc':
+    - commu settings: /commu_host/, /commu_socket/, /commu_transport/
+    - log settings: /logfiledir/, /loglength/, /maxlogfiles/
+    - run settings: /run_nr_file/
+    - ems configuration file: /super_setup/
 
 ** Checking the status of the running process under linux
 
